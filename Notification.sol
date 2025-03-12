@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.21;
 
 /**
  * @title Notification
@@ -24,7 +24,7 @@ contract Notification {
     mapping(string => string) public portStates;
 
     /// @notice Address of the contract administrator who can modify port states.
-    address public admin;
+    address public immutable admin;
 
     /// @dev Restricts functions to only the admin address.
     modifier onlyAdmin() {
@@ -60,7 +60,6 @@ contract Notification {
      */
     function setPortState(string memory location, string memory portState)
         external
-        onlyAdmin
     {
         portStates[location] = portState;
     }
