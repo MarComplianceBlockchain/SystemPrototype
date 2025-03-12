@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.21;
 
 /**
  * @title VesselRegistration
@@ -18,7 +18,7 @@ contract VesselRegistration {
     mapping(string => Vessel) private vessels;
 
     /// @notice Address of the contract administrator (e.g., maritime authority).
-    address public admin;
+    address public immutable admin;
 
     /// @dev Restricts access to admin-only functions.
     modifier onlyAdmin() {
