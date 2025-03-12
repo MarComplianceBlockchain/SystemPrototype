@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.21;
 
 import "./VesselRegistration.sol";
 import "./Notification.sol";
@@ -16,8 +16,8 @@ contract EmissionData {
         string vesselId;
         uint256 sulfurContent;  // e.g., scaled by 1000 if desired
         string position;        // can be lat-lon or named region
-        bool isECA;            // whether the area is an Emission Control Area
-        bool isCompliant;      // compliance result with sulfur regulations
+        bool isECA;             // whether the area is an Emission Control Area
+        bool isCompliant;       // compliance result with sulfur regulations
     }
 
     /**
@@ -30,11 +30,11 @@ contract EmissionData {
     uint256 private constant ECA_SULFUR_LIMIT = 100;   // e.g., 0.10%
     uint256 private constant NON_ECA_SULFUR_LIMIT = 500; // e.g., 0.50%
 
-    VesselRegistration public vesselRegistration;
-    Notification public notification;
+    VesselRegistration public immutable vesselRegistration;
+    Notification public immutable notification;
 
     /// @notice Contract administrator with special privileges, if needed.
-    address public admin;
+    address public immutable admin;
 
     /// @dev Restricts to the admin of this contract.
     modifier onlyAdmin() {
@@ -155,3 +155,4 @@ contract EmissionData {
         return vesselEmissions[vesselId];
     }
 }
+
