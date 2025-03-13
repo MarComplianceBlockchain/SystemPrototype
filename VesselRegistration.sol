@@ -3,41 +3,50 @@ pragma solidity ^0.8.21;
 
 /**
  * @title VesselRegistration
- * @dev Stores and verifies the registration details of vessels (by IMO number).
- *      Only an admin can add or modify vessel records.
+ * @dev This contract maintains an authoritative registry of vessels, keyed by IMO number.
+ *      Each vessel entry includes an owner address and a flag state. Only the contract
+ *      administrator (set upon deployment) can add or modify vessel records.
  */
 contract VesselRegistration {
-    /// @dev Holds basic vessel data: IMO number, owner (as an address), and flag state.
+    /**
+     * @dev Stores core vessel information:
+     *      - imoNumber: The unique IMO identifier.
+     *      - owner: The Ethereum address of the vessel's owner or operator.
+     *      - flagState: A string representing the vessel's flag state (e.g., "Panama").
+     */
     struct Vessel {
         string imoNumber;
         address owner;
         string flagState;
     }
 
-    /// @notice Mapping of IMO number -> Vessel details.
+    /// @notice Mapping of IMO numbers to their vessel records.
     mapping(string => Vessel) private vessels;
 
-    /// @notice Address of the contract administrator (e.g., maritime authority).
+    /// @notice Address of the contract administrator (the entity with permission to register or update vessels).
     address public immutable admin;
 
-    /// @dev Restricts access to admin-only functions.
+    /**
+     * @dev Restricts function calls to only the admin address.
+     */
     modifier onlyAdmin() {
         require(msg.sender == admin, "Not authorized");
         _;
     }
 
     /**
-     * @dev Initializes the contract, setting the deployer as `admin`.
+     * @dev Initializes the contract by designating the deployer as `admin`.
      */
     constructor() {
         admin = msg.sender;
     }
 
     /**
-     * @notice Registers a new vessel.
-     * @param imoNumber The unique IMO number for the vessel.
-     * @param ownerAddr The Ethereum address of the vessel owner or operator.
-     * @param flagState The vessel's flag state (e.g., country code).
+     * @notice Registers or updates a vessel record, including its owner address and flag state.
+     * @dev Only callable by the contract administrator.
+     * @param imoNumber The unique IMO identifier for the vessel.
+     * @param ownerAddr The owner or operator's Ethereum address.
+     * @param flagState The vessel's flag state (e.g., a country code).
      */
     function registerVessel(
         string memory imoNumber,
@@ -52,9 +61,9 @@ contract VesselRegistration {
     }
 
     /**
-     * @notice Checks if a vessel is registered by IMO number.
-     * @param imoNumber The IMO number to query.
-     * @return True if the vessel is registered, false otherwise.
+     * @notice Checks whether a vessel is registered under a given IMO number.
+     * @param imoNumber The IMO number to look up.
+     * @return True if the vessel exists in the registry, false otherwise.
      */
     function isVesselRegistered(string calldata imoNumber)
         external
@@ -65,9 +74,9 @@ contract VesselRegistration {
     }
 
     /**
-     * @notice Retrieves the flag state of a given vessel.
+     * @notice Retrieves the recorded flag state for a specified vessel.
      * @param imoNumber The IMO number of the vessel.
-     * @return The flag state as a string.
+     * @return A string representing the vessel's flag state.
      */
     function getFlagState(string calldata imoNumber)
         external
@@ -78,9 +87,9 @@ contract VesselRegistration {
     }
 
     /**
-     * @notice Retrieves the owner address of a given vessel.
+     * @notice Retrieves the owner address for a specified vessel.
      * @param imoNumber The IMO number of the vessel.
-     * @return The owner (Ethereum address) stored for this vessel.
+     * @return The Ethereum address stored as the owner of this vessel.
      */
     function getVesselOwner(string calldata imoNumber)
         external
@@ -90,6 +99,5 @@ contract VesselRegistration {
         return vessels[imoNumber].owner;
     }
 }
-
 
 
