@@ -1,75 +1,58 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.21;
+const VesselRegistration = artifacts.require("VesselRegistration");
 
-/**
- * @title VesselRegistration
- * @dev Stores and verifies the registration details of vessels (by IMO number).
- *      Only an admin can add or modify vessel records.
- */
-contract VesselRegistration {
-    /// @dev Holds basic vessel data: IMO number, owner, and flag state.
-    struct Vessel {
-        string imoNumber;
-        string owner;
-        string flagState;
+contract("VesselRegistration", (accounts) => {
+  let vesselRegInstance;
+  const admin = accounts[0];
+  const nonAdmin = accounts[1];
+  const someVesselOwner = accounts[2];
+
+  before(async () => {
+    vesselRegInstance = await VesselRegistration.deployed();
+  });
+
+  it("should set deployer as admin", async () => {
+    const actualAdmin = await vesselRegInstance.admin();
+    assert.equal(actualAdmin, admin, "Deployer is the admin");
+  });
+
+  it("should allow only admin to register a vessel", async () => {
+    try {
+      await vesselRegInstance.registerVessel(
+        "IMO_BAD",
+        nonAdmin,   // new contract expects an address for the owner
+        "Bahamas",
+        { from: nonAdmin }
+      );
+      assert.fail("Expected revert not received");
+    } catch (error) {
+      assert(
+        error.message.includes("Not authorized"),
+        "Should revert with 'Not authorized'"
+      );
     }
+  });
 
-    /// @notice Mapping of IMO number -> Vessel details.
-    mapping(string => Vessel) private vessels;
+  it("should register a vessel from admin with an owner address", async () => {
+    await vesselRegInstance.registerVessel("IMO_12345", someVesselOwner, "Panama", { from: admin });
+    // Check if stored
+    const isRegistered = await vesselRegInstance.isVesselRegistered("IMO_12345");
+    assert.equal(isRegistered, true, "Should be registered");
+  });
 
-    /// @notice Address of the contract administrator (e.g., maritime authority).
-    address public immutable admin;
+  it("should retrieve the correct flagState", async () => {
+    const flag = await vesselRegInstance.getFlagState("IMO_12345");
+    assert.equal(flag, "Panama", "Flag state should match what was set");
+  });
 
-    /// @dev Restricts access to admin-only functions.
-    modifier onlyAdmin() {
-        require(msg.sender == admin, "Not authorized");
-        _;
-    }
+  it("should retrieve the correct vessel owner address", async () => {
+    const actualOwner = await vesselRegInstance.getVesselOwner("IMO_12345");
+    assert.equal(actualOwner, someVesselOwner, "Should store the correct address as owner");
+  });
 
-    /**
-     * @dev Initializes the contract, setting the deployer as `admin`.
-     */
-    constructor() {
-        admin = msg.sender;
-    }
+  it("should return false for unregistered vessel", async () => {
+    const isRegistered = await vesselRegInstance.isVesselRegistered("IMO_NOTHING");
+    assert.equal(isRegistered, false, "Should return false for a vessel not in the mapping");
+  });
+});
 
-    /**
-     * @notice Registers a new vessel.
-     * @param imoNumber The unique IMO number for the vessel.
-     * @param owner The owner or operator's identifier.
-     * @param flagState The vessel's flag state (e.g., country code).
-     */
-    function registerVessel(
-        string memory imoNumber,
-        string memory owner,
-        string memory flagState
-    ) public onlyAdmin {
-        vessels[imoNumber] = Vessel(imoNumber, owner, flagState);
-    }
 
-    /**
-     * @notice Checks if a vessel is registered by IMO number.
-     * @param imoNumber The IMO number to query.
-     * @return True if the vessel is registered, false otherwise.
-     */
-    function isVesselRegistered(string calldata imoNumber)
-        external
-        view
-        returns (bool)
-    {
-        return bytes(vessels[imoNumber].imoNumber).length > 0;
-    }
-
-    /**
-     * @notice Retrieves the flag state of a given vessel.
-     * @param imoNumber The IMO number of the vessel.
-     * @return The flag state as a string.
-     */
-    function getFlagState(string calldata imoNumber)
-        external
-        view
-        returns (string memory)
-    {
-        return vessels[imoNumber].flagState;
-    }
-}
