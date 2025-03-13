@@ -3,12 +3,15 @@ pragma solidity ^0.8.21;
 
 /**
  * @title Notification
- * @dev Logs non-compliance alerts for vessels, including relevant details
- *      such as flag state and port state. Administrators can set port states
- *      for different locations.
+ * @dev This contract stores and logs non-compliance alerts for vessels, including
+ *      relevant details such as flag state and a user-defined port or region label.
+ *      Only an authorized EmissionData contract may file new alerts.
  */
 contract Notification {
-    /// @dev Describes a compliance notification, including vessel ID and location.
+    /**
+     * @dev Represents a single non-compliance event, capturing essential data
+     *      about the vessel, the violation, and the location or port details.
+     */
     struct ComplianceNotification {
         uint256 timestamp;
         string vesselId;
@@ -17,27 +20,33 @@ contract Notification {
         string portState;
     }
 
-    /// @notice A list of all non-compliance notifications.
+    /// @notice A dynamic array holding all non-compliance notifications ever recorded.
     ComplianceNotification[] public notifications;
 
-    /// @notice Mapping from location -> port state label (e.g., "US Port").
-    mapping(string => string) public portStates;
-
-    /// @notice Address of the contract administrator who can modify port states.
+    /// @notice The admin address (the contract deployer).
     address public immutable admin;
 
-    /// @dev Restricts functions to only the admin address.
+    /// @notice The EmissionData contract authorized to call reportNonCompliance.
+    address public emissionDataContract;
+
+    /// @dev Restricts certain functions to only the admin account.
     modifier onlyAdmin() {
         require(msg.sender == admin, "Not authorized");
         _;
     }
 
+    /// @dev Restricts certain functions to only the EmissionData contract.
+    modifier onlyEmissionData() {
+        require(msg.sender == emissionDataContract, "Not EmissionData contract");
+        _;
+    }
+
     /**
-     * @dev Emitted when a non-compliance event is reported.
-     * @param vesselId The vessel's identifier or IMO number.
-     * @param message A short description of the non-compliance.
-     * @param flagState The vessel's flag state.
-     * @param portState The location's assigned port state.
+     * @dev Triggered whenever a new non-compliance event is reported to the contract.
+     * @param vesselId The unique ID or IMO number of the vessel.
+     * @param message A brief description of the non-compliance issue.
+     * @param flagState The vessel's flag state (e.g., "Panama", "Liberia").
+     * @param portState A string indicating port or region details (e.g., "USA").
      */
     event NonComplianceReported(
         string vesselId,
@@ -47,64 +56,56 @@ contract Notification {
     );
 
     /**
-     * @dev Sets the deployer as the contract `admin`.
+     * @dev Assigns the deploying address as admin and optionally sets an initial
+     *      EmissionData contract address. The EmissionData address can be zero if
+     *      not yet known (Approach A).
+     * @param _emissionDataContract The address of the EmissionData contract with
+     *                              permission to call reportNonCompliance.
      */
-    constructor() {
+    constructor(address _emissionDataContract) {
         admin = msg.sender;
+        emissionDataContract = _emissionDataContract;
     }
 
     /**
-     * @notice Admin function to define or update a port state's label for a given location string.
-     * @param location A string denoting a geographic region or port location.
-     * @param portState A descriptor for that port's status or ownership.
+     * @notice Allows the admin to modify the EmissionData contract address if it
+     *         changes or was initially set to zero.
+     * @dev Only callable by the admin.
+     * @param _emissionData The new address of the authorized EmissionData contract.
      */
-    function setPortState(string memory location, string memory portState)
-        external
-    {
-        portStates[location] = portState;
+    function setEmissionDataContract(address _emissionData) external onlyAdmin {
+        emissionDataContract = _emissionData;
     }
 
     /**
-     * @notice Retrieves the port state for a specified location.
-     * @param location The string naming the location (could be lat-lon, city, etc.).
-     * @return The port state's descriptor.
-     */
-    function getPortState(string memory location)
-        external
-        view
-        returns (string memory)
-    {
-        return portStates[location];
-    }
-
-    /**
-     * @notice Records a new non-compliance event with descriptive details.
-     * @param vesselId The vessel's identifier or IMO number.
-     * @param message Short description of the issue (e.g., "Exceeds 0.10% in ECA").
-     * @param flagState The vessel's flag state from VesselRegistration.
-     * @param portState The port state for the relevant location or region.
+     * @notice Creates a new non-compliance record with the specified details.
+     * @dev Restricted to calls from the EmissionData contract only.
+     * @param vesselId The vessel's unique identifier or IMO number.
+     * @param message A concise description of the violation (e.g., "Exceeds 0.10%").
+     * @param flagState The vessel's flag state, as recorded in VesselRegistration.
+     * @param portState The relevant port or regional label (e.g., "USA").
      */
     function reportNonCompliance(
         string memory vesselId,
         string memory message,
         string memory flagState,
         string memory portState
-    ) external {
+    ) external onlyEmissionData {
         notifications.push(
-            ComplianceNotification(
-                block.timestamp,
-                vesselId,
-                message,
-                flagState,
-                portState
-            )
+            ComplianceNotification({
+                timestamp: block.timestamp,
+                vesselId: vesselId,
+                message: message,
+                flagState: flagState,
+                portState: portState
+            })
         );
         emit NonComplianceReported(vesselId, message, flagState, portState);
     }
 
     /**
-     * @notice Returns an array of all compliance notifications logged so far.
-     * @return An array of ComplianceNotification structs.
+     * @notice Retrieves the full array of non-compliance notifications logged to date.
+     * @return An array of ComplianceNotification structs containing all recorded alerts.
      */
     function getNotifications()
         external
