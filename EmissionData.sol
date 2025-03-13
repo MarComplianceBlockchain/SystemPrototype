@@ -6,44 +6,56 @@ import "./Notification.sol";
 
 /**
  * @title EmissionData
- * @dev Records sulfur emission data for vessels, checks compliance thresholds,
- *      and notifies relevant parties of non-compliant readings.
+ * @dev This contract records sulfur emission data for each vessel, verifies compliance
+ *      against ECA and non-ECA thresholds, and triggers non-compliance alerts. Vessel data
+ *      (ownership and registration) is referenced from VesselRegistration, and any alerts
+ *      are logged via Notification.
  */
 contract EmissionData {
-    /// @dev Represents a single emission record with relevant data fields.
+    /**
+     * @dev Represents a single emission record, including:
+     *      - timestamp: The block time when this emission was recorded.
+     *      - vesselId: The vessel's unique identifier (e.g., IMO number).
+     *      - sulfurContent: The measured sulfur level (scaled as needed).
+     *      - position: Geographic identifier (lat/long or region).
+     *      - isECA: Indicates whether the position is inside an Emission Control Area.
+     *      - isCompliant: True if below the applicable sulfur limit.
+     *      - portState: A user-provided descriptor of the local port/region (e.g., "USA").
+     */
     struct Emission {
         uint256 timestamp;
         string vesselId;
-        uint256 sulfurContent;  // e.g., scaled by 1000 if desired
-        string position;        // can be lat-lon or named region
-        bool isECA;             // whether the area is an Emission Control Area
-        bool isCompliant;       // compliance result with sulfur regulations
+        uint256 sulfurContent;
+        string position;
+        bool isECA;
+        bool isCompliant;
+        string portState;
     }
 
-    /**
-     * @dev Instead of storing only the latest emission, we store an array of emissions for each vessel ID.
-     *      This allows historical auditing.
-     */
+    /// @dev Mapping each vessel ID to an array of all recorded emissions (historical auditing).
     mapping(string => Emission[]) private vesselEmissions;
 
-    /// @notice Fixed sulfur thresholds expressed in some consistent unit (e.g., parts per million scaled).
-    uint256 private constant ECA_SULFUR_LIMIT = 100;   // e.g., 0.10%
+    /// @notice Constants defining the sulfur limits for ECA vs. non-ECA areas.
+    uint256 private constant ECA_SULFUR_LIMIT = 100;     // e.g., 0.10%
     uint256 private constant NON_ECA_SULFUR_LIMIT = 500; // e.g., 0.50%
 
+    /// @notice References to external contracts:
+    ///         - VesselRegistration: verifies registration and retrieves owners.
+    ///         - Notification: logs non-compliance events.
     VesselRegistration public immutable vesselRegistration;
-    Notification public immutable notification;
+    Notification public notification;
 
-    /// @notice Contract administrator with special privileges, if needed.
+    /// @notice The contract admin, set at deployment (optional extra privilege).
     address public immutable admin;
 
-    /// @dev Restricts to the admin of this contract.
+    /// @dev Restricts certain functions to only the admin address.
     modifier onlyAdmin() {
         require(msg.sender == admin, "Not authorized");
         _;
     }
 
     /**
-     * @dev Checks if the specified vessel is registered in VesselRegistration.
+     * @dev Checks if the provided vessel ID is registered in VesselRegistration.
      */
     modifier onlyRegisteredVessel(string memory vesselId) {
         require(
@@ -54,8 +66,17 @@ contract EmissionData {
     }
 
     /**
-     * @param vesselRegistrationAddress Address of the deployed VesselRegistration contract.
-     * @param notificationAddress Address of the deployed Notification contract.
+     * @dev Ensures that the caller is the registered owner of the specified vessel.
+     */
+    modifier onlyVesselOwner(string memory vesselId) {
+        address vesselOwner = vesselRegistration.getVesselOwner(vesselId);
+        require(msg.sender == vesselOwner, "Not the vessel owner");
+        _;
+    }
+
+    /**
+     * @param vesselRegistrationAddress The deployed VesselRegistration contract address.
+     * @param notificationAddress The deployed Notification contract address.
      */
     constructor(address vesselRegistrationAddress, address notificationAddress) {
         vesselRegistration = VesselRegistration(vesselRegistrationAddress);
@@ -64,75 +85,78 @@ contract EmissionData {
     }
 
     /**
-     * @dev Emitted when a new emission record is successfully stored.
+     * @dev Emitted whenever a new emission record is created.
      * @param vesselId The vessel's unique identifier (e.g., IMO number).
-     * @param sulfurContent The measured sulfur content in scaled units.
-     * @param position The position or region where the measurement was taken.
-     * @param isECA Indicates if the location is an Emission Control Area.
-     * @param isCompliant True if within allowed thresholds, false otherwise.
+     * @param sulfurContent The measured sulfur content (scaled).
+     * @param position The position or region where measurement occurred.
+     * @param isECA True if the location is within an Emission Control Area.
+     * @param isCompliant True if the sulfur level does not exceed the relevant threshold.
+     * @param portState User-supplied text describing the port or local region (e.g., "Canada").
      */
     event EmissionRecorded(
         string vesselId,
         uint256 sulfurContent,
         string position,
         bool isECA,
-        bool isCompliant
+        bool isCompliant,
+        string portState
     );
 
     /**
-     * @notice Records a new sulfur emission reading for the given vessel.
-     * @dev Enforces compliance checks based on whether the location is ECA or not,
-     *      and notifies regulators if non-compliance is detected.
-     * @param vesselId The vessel's identifier (must be registered).
-     * @param sulfurContent The measured sulfur content (scaled, e.g. 100 for 0.10%).
-     * @param position A location string or lat-lon reference.
-     * @param isECA True if the position is within an Emission Control Area.
+     * @notice Records a new sulfur emission entry for the specified vessel, verifying
+     *         whether it remains below the permissible limit (0.10% in an ECA, 0.50% otherwise).
+     * @param vesselId The vessel identifier (must already be registered).
+     * @param sulfurContent The measured sulfur content (scaled), e.g., 100 => 0.10%.
+     * @param position A location descriptor (lat/long or city name).
+     * @param isECA Whether the position is within an Emission Control Area.
+     * @param portState An additional string (e.g., "USA") labeling the port or region.
      */
     function recordEmission(
         string memory vesselId,
         uint256 sulfurContent,
         string memory position,
-        bool isECA
-    ) public onlyRegisteredVessel(vesselId) {
-        // Determine compliance thresholds
-        bool isCompliant;
-        if (isECA) {
-            isCompliant = (sulfurContent <= ECA_SULFUR_LIMIT);
-        } else {
-            isCompliant = (sulfurContent <= NON_ECA_SULFUR_LIMIT);
-        }
+        bool isECA,
+        string memory portState
+    )
+        public
+        onlyRegisteredVessel(vesselId)
+        onlyVesselOwner(vesselId)
+    {
+        // Determine compliance by comparing sulfurContent to the appropriate limit
+        bool isCompliant = isECA
+            ? (sulfurContent <= ECA_SULFUR_LIMIT)
+            : (sulfurContent <= NON_ECA_SULFUR_LIMIT);
 
-        // Construct and store the emission record
+        // Create and store a new Emission record
         Emission memory newEmission = Emission({
             timestamp: block.timestamp,
             vesselId: vesselId,
             sulfurContent: sulfurContent,
             position: position,
             isECA: isECA,
-            isCompliant: isCompliant
+            isCompliant: isCompliant,
+            portState: portState
         });
         vesselEmissions[vesselId].push(newEmission);
 
-        // Emit event for off-chain or other on-chain listeners
+        // Emit an event for the recorded emission
         emit EmissionRecorded(
             vesselId,
             sulfurContent,
             position,
             isECA,
-            isCompliant
+            isCompliant,
+            portState
         );
 
-        // Trigger non-compliance logic if needed
+        // If not compliant, build and log a non-compliance report via Notification
         if (!isCompliant) {
             string memory flagState = vesselRegistration.getFlagState(vesselId);
-            string memory portState = notification.getPortState(position);
-
-            // Build a domain-specific message
+            // Construct a domain-specific message
             string memory message = isECA
                 ? "Non-compliance: Exceeds 0.10% sulfur limit in ECA."
                 : "Non-compliance: Exceeds 0.50% sulfur limit outside ECA.";
 
-            // Report the non-compliance event
             notification.reportNonCompliance(
                 vesselId,
                 message,
@@ -143,9 +167,18 @@ contract EmissionData {
     }
 
     /**
-     * @notice Retrieves the full emission history for a vessel.
-     * @param vesselId The vessel's identifier.
-     * @return An array of Emission structs.
+     * @notice Allows the admin to update the Notification contract reference if needed
+     *         (for instance, if deploying a new Notification contract).
+     * @param newNotification The address of the new Notification contract.
+     */
+    function setNotificationContract(address newNotification) external onlyAdmin {
+        notification = Notification(newNotification);
+    }
+
+    /**
+     * @notice Retrieves the entire emission history for a given vessel ID.
+     * @param vesselId The vessel's identifier (e.g., IMO number).
+     * @return An array of Emission records, in chronological order of insertion.
      */
     function getEmissionHistory(string calldata vesselId)
         external
